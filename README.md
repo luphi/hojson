@@ -80,17 +80,29 @@ The *unexpected EoF* error code will be returned when parsing has reached the en
 ## Return Codes
 
 `HOJSON_END_OF_DOCUMENT`: The root element has closed and parsing is done.
+
 `HOJSON_NAME`: The name of a name-value pair is available in the `name` variable of the context object. A value, array, or object is expected to follow.
+
 `HOJSON_VALUE`: The value of a name-value pair or array is available in the context object. Several variables can hold a value depending on the value's data type. The `value_type` variable indicates the type and type-specific variable to check.
+
 `HOJSON_OBJECT_BEGIN`: A new object opened. If it has a name, its name is available in the `name` variable of the context object.
+
 `HOJSON_OBJECT_END`: An object closed. If it had a name, its name is available in the `name` variable of the context object.
+
 `HOJSON_ARRAY_BEGIN`: An ordered list of 0+ values opened. If it had a name, its name is available in the `name` variable of the context object.
+
 `HOJSON_ARRAY_END`: An array closed. If it had a name, its name is available in the `name` variable of the context object.
+
 `HOJSON_ERROR_INVALID_INPUT`: One or more parameter passed to an hojson function was unacceptable.
+
 `HOJSON_ERROR_INTERNAL`: There's a bug in hojson and parsing must halt. This code is included as due diligence but should not be expected.
+
 `HOJSON_ERROR_INSUFFICIENT_MEMORY`: Initialization or continued parsing requires more memory. This error is one of two that can be recovered (see [Error Recovery](#error-recovery)).
+
 `HOJSON_ERROR_UNEXPECTED_EOF`: Reached the end of the JSON content before the end of the document. This error is one of two that can be recovered (see [Error Recovery](#error-recovery)).
+
 `HOJSON_ERROR_TOKEN_MISMATCH`: A `{` or `[` that opened an object/array did not match its closing token.
+
 `HOJSON_ERROR_SYNTAX`: Invalid syntax. The `line` and `column` variables of the context object will contain the line and column, respectively, where the error was first noticed but not necessarily where it exists.
 
 
