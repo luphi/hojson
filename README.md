@@ -97,7 +97,7 @@ The *unexpected EoF* error code will be returned when parsing has reached the en
 
 `HOJSON_ERROR_INTERNAL`: There's a bug in hojson and parsing must halt. This code is included as due diligence but should not be expected.
 
-`HOJSON_ERROR_INSUFFICIENT_MEMORY`: Initialization or continued parsing requires more memory. This error is one of two that can be recovered (see [Error Recovery](#error-recovery)).
+`HOJSON_ERROR_INSUFFICIENT_MEMORY`: Continued parsing requires more memory. This error is one of two that can be recovered (see [Error Recovery](#error-recovery)).
 
 `HOJSON_ERROR_UNEXPECTED_EOF`: Reached the end of the JSON content before the end of the document. This error is one of two that can be recovered (see [Error Recovery](#error-recovery)).
 
