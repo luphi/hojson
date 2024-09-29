@@ -1,0 +1,7 @@
+{
+    "array with leading comma" :
+    [
+        ,
+        "name" : "value"
+    ]
+}

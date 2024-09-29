@@ -1,0 +1,19 @@
+{
+    "depth 1" :
+    {
+        "depth 2" :
+        {
+            "depth 3 name" : "depth 3 value"
+        }
+    },
+    "array" :
+    [
+        {
+            "array depth 1" : true,
+            "array object" :
+            {
+                "array depth 2" : null
+            }
+        }
+    ]
+}

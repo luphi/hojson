@@ -1,0 +1,11 @@
+[
+    "string value without a name",
+    {
+        "name" : "value"
+    },
+    {},
+    [ 0, 1, 2 ],
+    {
+        "this object has a name-value pair" : "but has no name itself"
+    }
+]

@@ -1,0 +1,14 @@
+{
+    "depth 1 array" :
+    [
+        [
+            "this array is nested",
+            [
+                "this array is further nested",
+                1234
+            ]
+        ],
+        "this element is not nested",
+        5678
+    ]
+}

@@ -1,0 +1,16 @@
+{
+    "positive integer" : 12345,
+    "negative integer" : -6789,
+    "positive float" : 123.456,
+    "negative float" : -123.456,
+    "e with minus" : 123.4e-5,
+    "E with plus" : 1.234E+5,
+    "E without sign" : 567E8,
+    "array" : [
+        0,
+        1,
+        3.1415926,
+        271828e-5,
+        1.7e+308
+    ]
+}

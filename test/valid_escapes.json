@@ -1,0 +1,5 @@
+{
+    "single-character escapes" : "\\ \/ \" \t",
+    "unicode escapes" : "this is a \u0054\u0045\u0053\u0054",
+    "escapes\tin\\a\/name" : "single-character escapes in a name"
+}
