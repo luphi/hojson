@@ -232,6 +232,9 @@ typedef struct _hojson_character_t {
     size_t bytes; /* Number of eight-bit bytes of the encoded character, in the [1, 4] range */
 } hojson_character_t;
 
+#ifndef UINT32_MAX /* Defined in stdint.h with later revisions of C and C++ but not for some earlier ones */
+    #define UINT32_MAX (0xffffffff)
+#endif
 #define HOJSON_STACK ((hojson_node_t*)context->stack)
 #define HOJSON_TO_LOWER(c) (c >= 'A' && c <= 'Z' ? c + 32 : c)
 #define HOJSON_IS_NEW_LINE(c) (c == '\n' || c == '\r')
