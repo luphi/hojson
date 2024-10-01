@@ -91,11 +91,11 @@ typedef struct {
     uint32_t column; /**< The column, on the current line, of the character last parsed. */
 
     /* Private (for internal use) */
-    uint8_t is_initalized; /* Set to true by hojson_init() and indicates this context is safe to use */
+    uint8_t is_initialized; /* Set to true by hojson_init() and indicates this context is safe to use */
     const char* json; /* JSON content to be parsed */
     size_t json_length; /* Length of the JSON content to parse */
     uint8_t encoding; /* Character encoding of the JSON content */
-    const char* iterator; /* Pointer to the chracter in the JSON content being parsed */
+    const char* iterator; /* Pointer to the character in the JSON content being parsed */
     size_t bytes_iterated; /* Number of bytes iterated with the last iteration */
     char* buffer; /* Memory allocated for hojson to use */
     size_t buffer_length; /* Amount of memory allocated for hojson */
@@ -268,12 +268,12 @@ HOJSON_DECL void hojson_init(hojson_context_t* context, char* buffer, const size
     context->buffer = buffer; /* Use the provided buffer */
     context->buffer_length = buffer_length; /* Remember the length of the provided buffer */
     context->line = 1; /* This is meant to be human-readable and humans begin counting at one */
-    context->is_initalized = 1;
+    context->is_initialized = 1;
     memset(buffer, 0, buffer_length); /* Fill the buffer with zeroes */
 }
 
 HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const size_t buffer_length) {
-    if (context == NULL || context->is_initalized == 0 || buffer == NULL || buffer_length <= context->buffer_length)
+    if (context == NULL || context->is_initialized == 0 || buffer == NULL || buffer_length <= context->buffer_length)
         return;
 
     /* Reassign the end and parent pointers of each node, beginning at the tail and iterate to the head */
@@ -309,7 +309,7 @@ HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const s
 
 HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* json, const size_t json_length) {
     /* If there's no context object, the context is unintialized, or no JSON content was provided */
-     if (context == NULL || context->is_initalized == 0 || json == NULL || json_length <= 0)
+     if (context == NULL || context->is_initialized == 0 || json == NULL || json_length <= 0)
         return HOJSON_ERROR_INVALID_INPUT;
 
     if (HOJSON_STACK != NULL) {
