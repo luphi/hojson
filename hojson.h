@@ -100,6 +100,7 @@ typedef struct {
     char* buffer; /* Memory allocated for hojson to use */
     size_t buffer_length; /* Amount of memory allocated for hojson */
     int8_t state; /* Current parsing state, determines which characters are acceptable and when to return */
+    int8_t escape_return_state; /* State to return to after processing a Unicode escape */
     int8_t error_return_state; /* State to return to after recovering from an error */
     char* stack; /* Pointer to the current node in the stack-like structure of objects and/or arrays */
     uint32_t stream; /* Holds the current character, whole or partial. May contain bytes from different strings. */
@@ -175,16 +176,11 @@ enum {
     HOJSON_STATE_POST_NAME, /* A name was ended by a double quote (") and a colon (:) is expected */
     HOJSON_STATE_VALUE_EXPECTED, /* A value is expected due to a colon (:) after a name or a comma (,) in an array */
     HOJSON_STATE_STRING_VALUE, /* A double quote (") was found after a colon (:) or in an array */
-    HOJSON_STATE_NAME_ESCAPE, /* A backslash (\) was found and an escaped or Unicode character is expected */
-    HOJSON_STATE_VALUE_ESCAPE, /* Like the above but the escape was found in a value, not a name */
-    HOJSON_STATE_NAME_UNICODE_1, /* Unicode escapement notation was found, a hex number is expected */
-    HOJSON_STATE_VALUE_UNICODE_1, /* Like the above but the escape was found in a value, not a name */
-    HOJSON_STATE_NAME_UNICODE_2, /* Unicode escapement notation was found, a second hex number is expected */
-    HOJSON_STATE_VALUE_UNICODE_2, /* Like the above but the escape was found in a value, not a name */
-    HOJSON_STATE_NAME_UNICODE_3, /* Unicode escapement notation was found, a third hex number is expected */
-    HOJSON_STATE_VALUE_UNICODE_3, /* Like the above but the escape was found in a value, not a name */
-    HOJSON_STATE_NAME_UNICODE_4, /* Unicode escapement notation was found, a fourth hex number is expected */
-    HOJSON_STATE_VALUE_UNICODE_4, /* Like the above but the escape was found in a value, not a name */
+    HOJSON_STATE_ESCAPE, /* A backslash (\) was found and an escaped or Unicode character is expected */
+    HOJSON_STATE_UNICODE_1, /* Unicode escapement notation was found, a hex number is expected */
+    HOJSON_STATE_UNICODE_2, /* Unicode escapement notation was found, a second hex number is expected */
+    HOJSON_STATE_UNICODE_3, /* Unicode escapement notation was found, a third hex number is expected */
+    HOJSON_STATE_UNICODE_4, /* Unicode escapement notation was found, a fourth hex number is expected */
     HOJSON_STATE_NUMBER_VALUE, /* A number character (0-9) was found after a colon (:) or in an array */
     HOJSON_STATE_TRUE_VALUE_T, /* A 't' was found after a colon (:) or in an array, an 'r' is expected */
     HOJSON_STATE_TRUE_VALUE_R, /* An 'r' was found after a 't', a 'u' is expected */
@@ -508,7 +504,8 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 }
             } else if (c.value == '\\') { /* If a character is being escaped */
                 /* No need to append this character, it'll be discarded anyway. Just transition to escape state. */
-                context->state = HOJSON_STATE_NAME_ESCAPE;
+                context->escape_return_state = context->state; /* Branch back to this state when done with the escape */
+                context->state = HOJSON_STATE_ESCAPE;
             } else {
                 hojson_code_t code = hojson_append_character(context, c);
                 if (code < HOJSON_NO_OP) /* If appending the character failed */
@@ -557,15 +554,15 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 return HOJSON_VALUE;
             } else if (c.value == '\\') { /* If a character is being escaped */
                 /* No need to append this character, it'll be discarded anyway. Just transition to escape state. */
-                context->state = HOJSON_STATE_VALUE_ESCAPE;
+                context->escape_return_state = context->state; /* Branch back to this state when done with the escape */
+                context->state = HOJSON_STATE_ESCAPE;
             } else {
                 hojson_code_t code = hojson_append_character(context, c);
                 if (code < HOJSON_NO_OP) /* If appending the character failed */
                     return code;
             } break;
-        case HOJSON_STATE_NAME_ESCAPE: /* A backslash (\) was found and an escaped or Unicode character is expected */
-        case HOJSON_STATE_VALUE_ESCAPE: { /* Like the above but the escape was found in a value, not a name */
-            HOJSON_LOG_STATE("HOJSON_STATE_NAME_ESCAPE || HOJSON_STATE_VALUE_ESCAPE")
+        case HOJSON_STATE_ESCAPE: /* A backslash (\) was found and an escaped or Unicode character is expected */
+            HOJSON_LOG_STATE("HOJSON_STATE_ESCAPE")
             uint32_t characterToAppend;
             switch (c.value) {
             /* The non-default cases here represent the only characters that are acceptable after a backslash */
@@ -579,10 +576,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             case 't':  characterToAppend = '\t'; break;
             /* 'u' is special: it is a Unicode substitution where four hex characters are expected to follow */
             case 'u':
-                if (context->state == HOJSON_STATE_NAME_ESCAPE) /* If the escape was found in a name string */
-                    context->state = HOJSON_STATE_NAME_UNICODE_1;
-                else /* If the escape was found in a value string */
-                    context->state = HOJSON_STATE_VALUE_UNICODE_1;
+                context->state = HOJSON_STATE_UNICODE_1;
                 continue;
             /* All other characters are invalid syntax */
             default: context->state = HOJSON_STATE_ERROR_SYNTAX; continue;
@@ -593,54 +587,39 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 return code;
             else {
                 /* Return to the state we originally branched from */
-                if (context->state == HOJSON_STATE_NAME_ESCAPE) /* If the escape was found in a name string */
-                    context->state = HOJSON_STATE_NAME; /* Return to appending characters for a name */
-                else /* If the escape was found in a value string */
-                    context->state = HOJSON_STATE_STRING_VALUE; /* Return to appending characters for a value */
-            } } break;
-        case HOJSON_STATE_NAME_UNICODE_1: /* Unicode escapement notation was found, a hex number is expected */
-        case HOJSON_STATE_VALUE_UNICODE_1: /* Like the above but the escape was found in a value, not a name */
-            HOJSON_LOG_STATE("HOJSON_STATE_NAME_UNICODE_1 || HOJSON_STATE_VALUE_UNICODE_1")
+                context->state = context->escape_return_state;
+                context->escape_return_state = HOJSON_STATE_NONE;
+            } break;
+        case HOJSON_STATE_UNICODE_1: /* Unicode escapement notation was found, a hex number is expected */
+            HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_1")
             if (HOJSON_IS_HEX_CHAR(c.value)) {
                 /* Hexadecimal (base-16) can be converted to decimal (base-ten) iteratively. For example, given the */
                 /* hex value ABCD, the decimal equivalent is (A * 16^3) + (B * 16^2) + (C * 16^1) + (D * 16^0). This */
                 /* state is dedicated to the most significant digit so we multiply by 16^3 (4096). */
                 /* Note: the use of the integer number value variable is only temporary. */
                 context->integer_value = hojson_hex_character_to_decimal(c.value) * 4096;
-                if (context->state == HOJSON_STATE_NAME_UNICODE_1) /* If the escape was found in a name string */
-                    context->state = HOJSON_STATE_NAME_UNICODE_2;
-                else /* If the escape was found in a value string */
-                    context->state = HOJSON_STATE_VALUE_UNICODE_2;
+                context->state = HOJSON_STATE_UNICODE_2;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
-        case HOJSON_STATE_NAME_UNICODE_2: /* Unicode escapement notation was found, a second hex number is expected */
-        case HOJSON_STATE_VALUE_UNICODE_2: /* Like the above but the escape was found in a value, not a name */
-            HOJSON_LOG_STATE("HOJSON_STATE_NAME_UNICODE_2 || HOJSON_STATE_VALUE_UNICODE_2")
+        case HOJSON_STATE_UNICODE_2: /* Unicode escapement notation was found, a second hex number is expected */
+            HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_2")
             if (HOJSON_IS_HEX_CHAR(c.value)) {
                 context->integer_value += hojson_hex_character_to_decimal(c.value) * 256; /* 16^2 */
-                if (context->state == HOJSON_STATE_NAME_UNICODE_2) /* If the escape was found in a name string */
-                    context->state = HOJSON_STATE_NAME_UNICODE_3;
-                else /* If the escape was found in a value string */
-                    context->state = HOJSON_STATE_VALUE_UNICODE_3;
+                context->state = HOJSON_STATE_UNICODE_3;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
-        case HOJSON_STATE_NAME_UNICODE_3: /* Unicode escapement notation was found, a third hex number is expected */
-        case HOJSON_STATE_VALUE_UNICODE_3: /* Like the above but the escape was found in a value, not a name */
-            HOJSON_LOG_STATE("HOJSON_STATE_NAME_UNICODE_3 || HOJSON_STATE_VALUE_UNICODE_3")
+        case HOJSON_STATE_UNICODE_3: /* Unicode escapement notation was found, a third hex number is expected */
+            HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_3")
             if (HOJSON_IS_HEX_CHAR(c.value)) {
                 context->integer_value += hojson_hex_character_to_decimal(c.value) * 16; /* 16^1 */
-                if (context->state == HOJSON_STATE_NAME_UNICODE_3) /* If the escape was found in a name string */
-                    context->state = HOJSON_STATE_NAME_UNICODE_4;
-                else /* If the escape was found in a value string */
-                    context->state = HOJSON_STATE_VALUE_UNICODE_4;
+                context->state = HOJSON_STATE_UNICODE_4;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
-        case HOJSON_STATE_NAME_UNICODE_4: /* Unicode escapement notation was found, a fourth hex number is expected */
-        case HOJSON_STATE_VALUE_UNICODE_4: /* Like the above but the escape was found in a value, not a name */
-            HOJSON_LOG_STATE("HOJSON_STATE_NAME_UNICODE_4 || HOJSON_STATE_VALUE_UNICODE_4")
+        case HOJSON_STATE_UNICODE_4: /* Unicode escapement notation was found, a fourth hex number is expected */
+            HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_4")
             if (HOJSON_IS_HEX_CHAR(c.value)) {
                 context->integer_value += hojson_hex_character_to_decimal(c.value) * 1; /* 16^0 */
                 hojson_character_t encodedCharacter = hojson_encode_character(context->integer_value,
@@ -650,12 +629,8 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     return code;
                 else {
                     context->integer_value = 0; /* Zero the integer number value; its use was only temporary */
-
-                    /* Return to the state we originally branched from */
-                    if (context->state == HOJSON_STATE_NAME_UNICODE_4) /* If the escape was found in a name string */
-                        context->state = HOJSON_STATE_NAME; /* Return to appending characters for a name */
-                    else /* If the escape was found in a value string */
-                        context->state = HOJSON_STATE_STRING_VALUE; /* Return to appending characters for a value */
+                    context->state = context->escape_return_state; /* Return to the state we originally branched from */
+                    context->escape_return_state = HOJSON_STATE_NONE;
                 }
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
