@@ -561,7 +561,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 if (code < HOJSON_NO_OP) /* If appending the character failed */
                     return code;
             } break;
-        case HOJSON_STATE_ESCAPE: /* A backslash (\) was found and an escaped or Unicode character is expected */
+        case HOJSON_STATE_ESCAPE: { /* A backslash (\) was found and an escaped or Unicode character is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_ESCAPE")
             uint32_t characterToAppend;
             switch (c.value) {
@@ -589,7 +589,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 /* Return to the state we originally branched from */
                 context->state = context->escape_return_state;
                 context->escape_return_state = HOJSON_STATE_NONE;
-            } break;
+            } } break;
         case HOJSON_STATE_UNICODE_1: /* Unicode escapement notation was found, a hex number is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_1")
             if (HOJSON_IS_HEX_CHAR(c.value)) {
