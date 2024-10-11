@@ -148,8 +148,6 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
     }
 #endif /* __cplusplus */
 
-#endif /* HOJSON_H */
-
 #ifdef HOJSON_IMPLEMENTATION
 
 #ifdef _MSC_VER
@@ -1155,3 +1153,5 @@ uint32_t hojson_hex_character_to_decimal(uint32_t character) {
 #endif /* _MSC_VER */
 
 #endif /* HOJSON_IMPLEMENTATION */
+
+#endif /* HOJSON_H */
