@@ -32,7 +32,7 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #include <stddef.h> /* NULL, size_t */
 #include <string.h> /* memcpy(), memset() */
-#include <stdint.h> /* int8_t, uint8_t, uint32_t */
+#include <stdint.h> /* int8_t, uint8_t, uint16_t, uint32_t */
 #include <stdlib.h> /* atof(), atoi() */
 
 #ifndef HOJSON_DECL
@@ -89,6 +89,7 @@ typedef struct {
     hojson_type_t value_type; /**< The type of the value of a name-value pair or array. */
     uint32_t line; /**< The line currently being parsed. Lines are determined by line feeds and carriage returns. */
     uint32_t column; /**< The column, on the current line, of the character last parsed. */
+    uint32_t depth; /**< The nested level of objects/arrays. Assigned with the level in which the element was found. */
 
     /* Private (for internal use) */
     uint8_t is_initialized; /* Set to true by hojson_init() and indicates this context is safe to use */
@@ -195,14 +196,16 @@ enum {
 };
 
 enum {
-    HOJSON_FLAG_IS_ARRAY = 0x01, /* 0000 0001 - marks a node as an array, not an object, only values are expected */
-    HOJSON_FLAG_HAS_NAME = 0x02, /* 0000 0010 - the node has a name that would apply to a child object or array */
-    HOJSON_FLAG_COMMA = 0x04, /* 0000 0100 - a comma appeared after a name-value pair and another is expected later */
-    HOJSON_FLAG_DECIMAL = 0x08, /* 0000 1000 - a number value contains a decimal (.) */
-    HOJSON_FLAG_EXPONENT = 0x10, /* 0001 0000 - a number value contains an exponent (e or E) */
-    HOJSON_FLAG_PLUS_OR_MINUS = 0x20, /* 0010 0000 - a number value contains a plus (+) or minus (-) sign */
-    HOJSON_FLAG_MUST_POP_STACK = 0x40, /* 0100 0000 - the stack must be popped on the next call to hojson_parse() */
-    HOJSON_FLAG_POST_VALUE_CLEAN_UP = 0x80 /* 1000 0000 - context object's name and values must be nullified/zeroed */
+    HOJSON_FLAG_IS_ARRAY = 1, /* marks a node as an array, not an object, only values are expected */
+    HOJSON_FLAG_HAS_NAME = 2, /* the node has a name that would apply to a child object or array */
+    HOJSON_FLAG_COMMA = 4, /* a comma appeared after a name-value pair and another is expected later */
+    HOJSON_FLAG_DECIMAL = 8, /* a number value contains a decimal (.) */
+    HOJSON_FLAG_EXPONENT = 16, /* a number value contains an exponent (e or E) */
+    HOJSON_FLAG_PLUS_OR_MINUS = 32, /* a number value contains a plus (+) or minus (-) sign */
+    HOJSON_FLAG_MUST_POP_STACK = 64, /* the stack must be popped on the next call to hojson_parse() */
+    HOJSON_FLAG_POST_VALUE_CLEAN_UP = 128, /* context object's name and values must be nullified/zeroed */
+    HOJSON_FLAG_INCREMENT_DEPTH = 256, /* context object's depth value should increase by one next hojson_parse() */
+    HOJSON_FLAG_DECREMENT_DEPTH = 512 /* context object's depth value should decrease by one netx hojson_parse() */
 };
 
 enum {
@@ -216,7 +219,7 @@ typedef struct _hojson_node_t hojson_node_t;
 typedef struct _hojson_node_t {
     hojson_node_t* parent; /* Points to the parent node, or NULL if this is the root */
     char* end; /* Points to the last byte of this node's data */
-    uint8_t flags; /* May contain any number of bit flags indicating various things */
+    uint16_t flags; /* May contain any number of bit flags indicating various things */
     char data; /* Where characters will be stored in the buffer, must be defined last */
 } hojson_node_t;
 
@@ -307,6 +310,18 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
         return HOJSON_ERROR_INVALID_INPUT;
 
     if (HOJSON_STACK != NULL) {
+        if (HOJSON_STACK->flags & HOJSON_FLAG_INCREMENT_DEPTH) /* If an object/array began, increasing nesting */
+        {
+            context->depth += 1;
+            HOJSON_STACK->flags &= ~HOJSON_FLAG_INCREMENT_DEPTH; /* Clear the flag */
+        }
+
+        if (HOJSON_STACK->flags & HOJSON_FLAG_DECREMENT_DEPTH) /* If an object/array ended, decreasing nesting */
+        {
+            context->depth -= 1;
+            HOJSON_STACK->flags &= ~HOJSON_FLAG_DECREMENT_DEPTH; /* Clear the flag */
+        }
+
         /* If an object or array ended and, now that its name was provided, its node must be popped from the stack */
         if (HOJSON_STACK->flags & HOJSON_FLAG_MUST_POP_STACK) {
             hojson_node_t* parent = HOJSON_STACK->parent;
@@ -337,8 +352,9 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             context->float_value = 0.0f;
             context->bool_value = 0;
 
-            /* Clear all flags except the potential "is array" one as all others are now stale */
-            HOJSON_STACK->flags &= HOJSON_FLAG_IS_ARRAY;
+            /* Clear all flags related to values used in parsing because they no longer apply */
+            HOJSON_STACK->flags &= ~(HOJSON_FLAG_HAS_NAME | HOJSON_FLAG_COMMA | HOJSON_FLAG_DECIMAL |
+                HOJSON_FLAG_EXPONENT | HOJSON_FLAG_PLUS_OR_MINUS | HOJSON_FLAG_POST_VALUE_CLEAN_UP);
         }
     }
 
@@ -677,10 +693,12 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 /* Note: while E notation could potentially describe an integer, atoi() does not support E notation. */
                 if (HOJSON_STACK->flags & HOJSON_FLAG_DECIMAL || HOJSON_STACK->flags & HOJSON_FLAG_EXPONENT) {
                     context->value_type = HOJSON_TYPE_FLOAT; /* Indicate the value is a floating-point number type */
-                    context->float_value = atof(context->string_value);
+                    if (context->string_value != NULL) /* Quick error check */
+                        context->float_value = atof(context->string_value);
                 } else {
                     context->value_type = HOJSON_TYPE_INTEGER; /* Indicate the value is an integer number type */
-                    context->integer_value = atoi(context->string_value);
+                    if (context->string_value != NULL) /* Quick error check */
+                        context->integer_value = atoi(context->string_value);
                 }
                 /* Nullify the value string. It was temporarily pointing to the number as a string. */
                 context->string_value = NULL;
@@ -884,6 +902,7 @@ hojson_code_t hojson_begin_token(hojson_context_t* context, char token) {
 
     if (context->state >= HOJSON_STATE_NONE) { /* If pushing a new node was successful */
         HOJSON_STACK->flags |= HOJSON_FLAG_POST_VALUE_CLEAN_UP; /* Clean up with the next hojson_parse() */
+        HOJSON_STACK->flags |= HOJSON_FLAG_INCREMENT_DEPTH; /* An object or array means one more level of nesting */
 
         if (token == '{') { /* If an object began */
             context->state = HOJSON_STATE_NAME_EXPECTED; /* Transition to the state appropriate for a new object */
@@ -922,6 +941,9 @@ hojson_code_t hojson_end_token(hojson_context_t* context, char token) {
     /* the object or array that just closed should be provided to the user and that string is within the memory of */
     /* the node we want to pop. */
     HOJSON_STACK->flags |= HOJSON_FLAG_MUST_POP_STACK;
+
+    /* Ending an object or array means one less level of nesting */
+    HOJSON_STACK->flags |= HOJSON_FLAG_DECREMENT_DEPTH;
 
     /* If a parent node exists and it has a name for this object or array */
     if (HOJSON_STACK->parent != NULL) {
