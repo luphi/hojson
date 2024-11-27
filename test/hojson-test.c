@@ -1,4 +1,5 @@
-#include <stdio.h> /* FILE, fopen(), fprintf(), fread(), fseek(), ftell(), printf(), stderr */
+#include <stdio.h> /* FILE, fclose() fopen(), fprintf(), fread(), fseek(), ftell(), printf(), SEEK_END, SEEK_SET, */
+                   /* stderr */
 #include <stdlib.h> /* atoi(), EXIT_FAILURE, EXIT_SUCCESS, free(), malloc(), NULL */
 
 #define HOJSON_IMPLEMENTATION
