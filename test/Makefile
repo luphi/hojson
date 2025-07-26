@@ -1,15 +1,15 @@
-CC:=gcc
-CFLAGS:=-I.. -g -O1 -s -Wall -std=c89
+CC := gcc
+CFLAGS := -I.. -g -s -Wall -ansi
 
 ifeq ($(OS),Windows_NT)
-	EXEC:=hojson-test.exe
+	EXEC := hojson-test.exe
 else
-	EXEC:=hojson-test.bin
+	EXEC := hojson-test.bin
 endif
 
 .PHONY: clean all
 
-all:
+all: hojson-test.c
 	$(CC) $(CFLAGS) hojson-test.c -o $(EXEC)
 
 clean:

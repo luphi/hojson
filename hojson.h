@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 Luke Philipsen
+Copyright (c) 2024-2025 Luke Philipsen
 
 Permission to use, copy, modify, and/or distribute this software for
 any purpose with or without fee is hereby granted.
@@ -32,7 +32,6 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #include <stddef.h> /* NULL, size_t */
 #include <string.h> /* memcpy(), memset() */
-#include <stdint.h> /* int8_t, uint8_t, uint16_t, uint32_t */
 #include <stdlib.h> /* atof(), atoi() */
 
 #ifndef HOJSON_DECL
@@ -66,7 +65,7 @@ typedef enum {
     HOJSON_ARRAY_END /**< An array closed. If it had a name, its name is available. */
 } hojson_code_t;
 
-typedef enum _hojson_type_t {
+typedef enum {
     HOJSON_TYPE_NONE = 0, /**< There are is no value to be provided at this point in parsing. */
     HOJSON_TYPE_INTEGER, /**< A signed integer number. */
     HOJSON_TYPE_FLOAT, /**< A signed floating-point number. */
@@ -85,28 +84,29 @@ typedef struct {
     char* string_value; /**< The value of a name-value pair or array for values whose type is HOJSON_TYPE_STRING. */
     long integer_value; /**< The value of a name-value pair or array for values whose type is HOJSON_TYPE_INTEGER. */
     double float_value; /**< The value of a name-value pair or array for values whose type is HOJSON_TYPE_FLOAT. */
-    uint8_t bool_value; /**< The value of a name-value pair or array for values whose type is HOJSON_TYPE_BOOLEAN. */
+    int bool_value; /**< The value of a name-value pair or array for values whose type is HOJSON_TYPE_BOOLEAN. */
     hojson_type_t value_type; /**< The type of the value of a name-value pair or array. */
-    uint32_t line; /**< The line currently being parsed. Lines are determined by line feeds and carriage returns. */
-    uint32_t column; /**< The column, on the current line, of the character last parsed. */
-    uint32_t depth; /**< The nested level of objects/arrays. Assigned with the level in which the element was found. */
+    int line; /**< The line currently being parsed. Lines are determined by line feeds and carriage returns. */
+    int column; /**< The column, on the current line, of the character last parsed. */
+    int depth; /**< The nested level of objects/arrays. Assigned with the level in which the element was found. */
 
     /* Private (for internal use) */
-    uint8_t is_initialized; /* Set to true by hojson_init() and indicates this context is safe to use */
+    int is_initialized; /* Set to true by hojson_init() and indicates this context is safe to use */
     const char* json; /* JSON content to be parsed */
     size_t json_length; /* Length of the JSON content to parse */
-    uint8_t encoding; /* Character encoding of the JSON content */
+    int encoding; /* Character encoding of the JSON content */
     const char* iterator; /* Pointer to the character in the JSON content being parsed */
-    size_t bytes_iterated; /* Number of bytes iterated with the last iteration */
     char* buffer; /* Memory allocated for hojson to use */
     size_t buffer_length; /* Amount of memory allocated for hojson */
-    int8_t state; /* Current parsing state, determines which characters are acceptable and when to return */
-    int8_t escape_return_state; /* State to return to after processing a Unicode escape */
-    int8_t error_return_state; /* State to return to after recovering from an error */
+    int state; /* Current parsing state, determines which characters are acceptable and when to return */
+    int escape_return_state; /* State to return to after processing a Unicode escape */
+    int error_return_state; /* State to return to after recovering from an error */
     char* stack; /* Pointer to the current node in the stack-like structure of objects and/or arrays */
-    uint32_t stream; /* Holds the current character, whole or partial. May contain bytes from different strings. */
+    unsigned long stream; /* Holds the current character, whole or partial. May contain bytes from different strings. */
     size_t stream_length; /* Length of the 'stream' variable in bytes */
-    uint32_t newline_character; /* The character used to increment the 'line' variable, \r or \n */
+    unsigned newline_character; /* The character used to increment the 'line' variable, \r or \n */
+    const char* previous_iterator; /* Iterator before the most recent iteration. */
+    size_t previous_stream_length; /* Length of the 'stream' variable befor ethe most recent iteration. */
 } hojson_context_t;
 
 /**
@@ -117,7 +117,7 @@ typedef struct {
  * @param buffer A pointer to some contiguous block of memory for hojson to use. This will also be modified, frequently.
  * @param buffer_length The length, in bytes, of the buffer handed to hojson as the 'buffer' parameter.
  */
-HOJSON_DECL void hojson_init(hojson_context_t* context, char* buffer, const size_t buffer_length);
+HOJSON_DECL void hojson_init(hojson_context_t* context, void* buffer, size_t buffer_length);
 
 /**
  * Instruct hojson to use a new buffer. This maintains the current state of parsing meaning that the next call to
@@ -129,7 +129,7 @@ HOJSON_DECL void hojson_init(hojson_context_t* context, char* buffer, const size
  * @param buffer A pointer to a new, contiguous block of memory for hojson to use.
  * @param buffer_length The length, in bytes, of the buffer handed to hojson as the 'buffer' parameter.
  */
-HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const size_t buffer_length);
+HOJSON_DECL void hojson_realloc(hojson_context_t* context, void* buffer, size_t buffer_length);
 
 /**
  * Begin or continue parsing the given JSON content string.
@@ -139,11 +139,11 @@ HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const s
  * content string, using the same pointer or not.
  *
  * @param context An initialized hojson context object. This should be treated as read-only until parsing is done.
- * @param json JSON content as a string.
+ * @param json JSON content as an encoded string. Supported character encodings include ASCII, UTF-8, and UTF-16(BE|LE).
  * @param json_length Length of the JSON content in bytes.
  * @return A code indicating what information from the JSON content is available or an error.
  */
-HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* json, const size_t json_length);
+HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* json, size_t json_length);
 
 #ifdef __cplusplus
     }
@@ -219,13 +219,13 @@ typedef struct _hojson_node_t hojson_node_t;
 typedef struct _hojson_node_t {
     hojson_node_t* parent; /* Points to the parent node, or NULL if this is the root */
     char* end; /* Points to the last byte of this node's data */
-    uint16_t flags; /* May contain any number of bit flags indicating various things */
+    int flags; /* May contain any number of bit flags indicating various things */
     char data; /* Where characters will be stored in the buffer, must be defined last */
 } hojson_node_t;
 
 typedef struct _hojson_character_t {
-    uint32_t raw; /* Character as it appeared in the content. In other words, the original, encoded character. */
-    uint32_t value; /* Unicode value of the character. In other words, the decoded character. */
+    unsigned encoded; /* Character as it appeared in the content. In other words, the original, encoded character. */
+    unsigned codepoint; /* Unicode codepoint of the character. In other words, the decoded character. */
     size_t bytes; /* Number of eight-bit bytes of the encoded character, in the [1, 4] range */
 } hojson_character_t;
 
@@ -253,23 +253,23 @@ hojson_code_t hojson_append_character(hojson_context_t* context, hojson_characte
 hojson_code_t hojson_append_terminator(hojson_context_t* context);
 hojson_code_t hojson_begin_token(hojson_context_t* context, char token);
 hojson_code_t hojson_end_token(hojson_context_t* context, char token);
-hojson_character_t hojson_decode_character(const char* str, size_t str_length, uint8_t encoding);
-hojson_character_t hojson_encode_character(uint32_t value, uint8_t encoding);
-uint32_t hojson_hex_character_to_decimal(uint32_t value);
+hojson_character_t hojson_decode_character(const char* str, size_t str_length, int encoding);
+hojson_character_t hojson_encode_character(unsigned codepoint, int encoding);
+long hojson_hex_character_to_decimal(unsigned codepoint);
 
-HOJSON_DECL void hojson_init(hojson_context_t* context, char* buffer, const size_t buffer_length) {
+HOJSON_DECL void hojson_init(hojson_context_t* context, void* buffer, size_t buffer_length) {
     if (context == NULL || buffer == NULL || buffer_length <= 0)
         return;
 
     memset(context, 0, sizeof(hojson_context_t)); /* Assign all values of the context to zero */
-    context->buffer = buffer; /* Use the provided buffer */
+    context->buffer = (char*)buffer; /* Use the provided buffer */
     context->buffer_length = buffer_length; /* Remember the length of the provided buffer */
     context->line = 1; /* This is meant to be human-readable and humans begin counting at one */
     context->is_initialized = 1;
     memset(buffer, 0, buffer_length); /* Fill the buffer with zeroes */
 }
 
-HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const size_t buffer_length) {
+HOJSON_DECL void hojson_realloc(hojson_context_t* context, void* buffer, size_t buffer_length) {
     if (context == NULL || context->is_initialized == 0 || buffer == NULL || buffer_length <= context->buffer_length)
         return;
 
@@ -277,23 +277,23 @@ HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const s
     hojson_node_t* node = HOJSON_STACK;
     while (node != NULL) {
         hojson_node_t* parent = node->parent;
-        node->end = buffer + (node->end - context->buffer);
+        node->end = (char*)buffer + (node->end - context->buffer);
         if (node->parent != NULL)
-            node->parent = (hojson_node_t*)(buffer + ((char*)node->parent - context->buffer));
+            node->parent = (hojson_node_t*)((char*)buffer + ((char*)node->parent - context->buffer));
         node = parent;
     }
 
     /* Use offsets from the original buffer pointer to reassign pointers such that they now point to the new buffer */
     if (context->name != NULL)
-        context->name = buffer + (context->name - context->buffer);
+        context->name = (char*)buffer + (context->name - context->buffer);
     if (context->string_value != NULL)
-        context->string_value = buffer + (context->string_value - context->buffer);
+        context->string_value = (char*)buffer + (context->string_value - context->buffer);
     if (context->stack != NULL)
-        context->stack = buffer + ((char*)context->stack - context->buffer);
+        context->stack = (char*)buffer + (context->stack - context->buffer);
 
     memset(buffer, 0, buffer_length); /* Fill the new buffer with zeroes */
     memcpy(buffer, context->buffer, context->buffer_length); /* Copy the entire, current buffer to the new buffer */
-    context->buffer = buffer;
+    context->buffer = (char*)buffer;
     context->buffer_length = buffer_length;
 
     /* If this reallocation was done in order to recover from an "insufficient memory" error */
@@ -304,20 +304,18 @@ HOJSON_DECL void hojson_realloc(hojson_context_t* context, char* buffer, const s
     }
 }
 
-HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* json, const size_t json_length) {
+HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* json, size_t json_length) {
     /* If there's no context object, the context is unintialized, or no JSON content was provided */
      if (context == NULL || context->is_initialized == 0 || json == NULL || json_length <= 0)
         return HOJSON_ERROR_INVALID_INPUT;
 
     if (HOJSON_STACK != NULL) {
-        if (HOJSON_STACK->flags & HOJSON_FLAG_INCREMENT_DEPTH) /* If an object/array began, increasing nesting */
-        {
+        if (HOJSON_STACK->flags & HOJSON_FLAG_INCREMENT_DEPTH) { /* If an object/array began, increasing nesting */
             context->depth += 1;
             HOJSON_STACK->flags &= ~HOJSON_FLAG_INCREMENT_DEPTH; /* Clear the flag */
         }
 
-        if (HOJSON_STACK->flags & HOJSON_FLAG_DECREMENT_DEPTH) /* If an object/array ended, decreasing nesting */
-        {
+        if (HOJSON_STACK->flags & HOJSON_FLAG_DECREMENT_DEPTH) { /* If an object/array ended, decreasing nesting */
             context->depth -= 1;
             HOJSON_STACK->flags &= ~HOJSON_FLAG_DECREMENT_DEPTH; /* Clear the flag */
         }
@@ -363,15 +361,25 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
     /* be recovered by assigning a new buffer with hojson_realloc(). The latter can be recovered by passing a */
     /* new JSON content string to hojson_parse() so we'll check for one before concluding we're still in error. */
     case HOJSON_STATE_ERROR_UNEXPECTED_EOF: {
-        /* Try to decode a character, or remainder of a character, at the beginning of this hopefully-new string */
-        uint32_t stream = context->stream;
-        size_t bytes_to_copy = (json_length <= 4 ? json_length : 4) - context->stream_length;
-        if (bytes_to_copy < 4)
-            memcpy((char*)&stream + context->stream_length, json, bytes_to_copy);
-        else
-            stream = *(uint32_t*)json;
+            /* Try to decode a character, or remainder of a character, at the beginning of this hopefully-new string */
+            unsigned long stream = context->stream;
+            /* Calculate the number of bytes to copy into the 'stream' variable from the hopefully-new string. We */
+            /* want 4 bytes, or whatever is available. */
+            size_t bytes_to_copy = 4;
+            if (bytes_to_copy > json_length)
+                bytes_to_copy = json_length;
+            if (context->stream_length > 0) {
+                /* Adjust the number of bytes to copy to account for possible bytes from a previous string */
+                bytes_to_copy -= context->stream_length;
+                /* Append the new bytes to the previous one(s) */
+                memcpy((char*)&stream + context->stream_length, json, bytes_to_copy);
+            }
+            else {
+                /* Copy to the 'stream' under the assumption that all of it can be overwritten */
+                memcpy(&stream, json, bytes_to_copy);
+            }
         hojson_character_t c = hojson_decode_character((const char*)&stream, json_length, context->encoding);
-        if (c.value == 0 || c.value == UINT32_MAX) /* If a null terminator or there was not enough data */
+        if (c.codepoint == 0 || c.codepoint == UINT32_MAX) /* If a null terminator or there was not enough data */
             return HOJSON_ERROR_UNEXPECTED_EOF;
         context->state = context->error_return_state;
         context->error_return_state = HOJSON_STATE_NONE;
@@ -391,6 +399,9 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
         context->iterator = json;
     }
 
+    /* Remember some context variables in case we hit an unexpected EoF and need to undo an iteration */
+    context->previous_iterator = context->iterator;
+    context->stream_length = context->stream_length;
     while (context->state >= HOJSON_STATE_NONE && context->state <= HOJSON_STATE_DONE) {
         /* Apart from the error states, "none" state, and BOM states, all states assume the stack is non-null */
         if (context->state >= HOJSON_STATE_NAME_EXPECTED && HOJSON_STACK == NULL) {
@@ -400,40 +411,53 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             return HOJSON_ERROR_INTERNAL;
         }
 
+        /* Calculate the number of bytes remaining in the current JSON content string */
         size_t bytes_remaining = (size_t)(context->json_length - (context->iterator - context->json));
-        size_t bytes_to_copy = (bytes_remaining <= 4 ? bytes_remaining : 4) - context->stream_length;
-        if (bytes_to_copy < 4)
+        /* Calculate the number of bytes to copy into the 'stream' variable. We want 4 bytes, or whatever is left. */
+        size_t bytes_to_copy = 4;
+        if (bytes_to_copy > bytes_remaining)
+            bytes_to_copy = bytes_remaining;
+        if (context->stream_length > 0) {
+            /* Adjust the number of bytes to copy to account for possible bytes from a previous JSON content string. */
+            /* This will be non-zero in the rare case where content is being given in parts. */
+            bytes_to_copy -= context->stream_length;
+            /* Append the new bytes to the previous one(s) */
             memcpy((char*)&(context->stream) + context->stream_length, context->iterator, bytes_to_copy);
-        else
-            context->stream = *(uint32_t*)context->iterator;
+        }
+        else {
+            /* Copy to the 'stream' under the assumption that all of it can be overwritten */
+            memcpy(&(context->stream), context->iterator, bytes_to_copy);
+        }
         hojson_character_t c = hojson_decode_character((const char*)&(context->stream), bytes_remaining,
             context->encoding);
 
         /* If the character is the equivalent of a null terminator or there was not enough data to decode the value */
-        if (c.value == 0 || c.value == UINT32_MAX) {
+        if (c.codepoint == 0 || c.codepoint == UINT32_MAX) {
             context->stream_length = bytes_to_copy;
             context->error_return_state = context->state;
             context->state = HOJSON_STATE_ERROR_UNEXPECTED_EOF;
             return HOJSON_ERROR_UNEXPECTED_EOF;
-        } else if (HOJSON_IS_NEW_LINE(c.value)) {
+        } else if (HOJSON_IS_NEW_LINE(c.codepoint)) {
             if (context->newline_character == 0) /* If this is the first newline */
-                context->newline_character = c.value; /* Remember this as the newline character to use for increments */
-            if (c.value == context->newline_character) /* Avoid incrementing twice for files with \r\n endings */
+                context->newline_character = c.codepoint; /* Remember this as the character to use for increments */
+            if (c.codepoint == context->newline_character) /* Avoid incrementing twice for files with \r\n endings */
                 context->line++;
             context->column = 0;
         } else
             context->column++;
 
         /* Iterate by the number of bytes in the character (up to four). It's also possible part of this character */
-        /* was carried over from a previous string. Those bytes would have been stashed in the context's  'stream' */
+        /* was carried over from a previous string. Those bytes would have been stashed in the context's 'stream' */
         /* variable where 'stream_length' tells us the number of said bytes. */
-        context->bytes_iterated = c.bytes - context->stream_length;
-        context->iterator += context->bytes_iterated;
+        context->previous_iterator = context->iterator;
+        context->previous_stream_length = context->stream_length;
+        context->iterator += c.bytes - context->stream_length;
         context->stream_length = 0;
 
         #ifdef HOJSON_DEBUG
-            char debugValue = HOJSON_IS_NEW_LINE(c.value) ? ' ' : c.value;
-            printf(" %c [%08X] [L%02dC%02d] [%c%c%c%c%c] -> ", debugValue, c.value, context->line, context->column,
+            char debugCodepoint = HOJSON_IS_NEW_LINE(c.codepoint) ? ' ' : c.codepoint;
+            printf("  %c [%08X] [L%02dC%02d] [%c%c%c%c%c] -> ",
+                debugCodepoint, c.codepoint, context->line, context->column,
                 HOJSON_STACK ? (HOJSON_STACK->flags & HOJSON_FLAG_IS_ARRAY ? '1' : '0') : '0',
                 HOJSON_STACK ? (HOJSON_STACK->flags & HOJSON_FLAG_COMMA ? '1' : '0') : '0',
                 HOJSON_STACK ? (HOJSON_STACK->flags & HOJSON_FLAG_DECIMAL ? '1' : '0') : '0',
@@ -444,24 +468,24 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
         switch (context->state) {
         case HOJSON_STATE_NONE: /* Initial state meaning no JSON content has been found yet */
             HOJSON_LOG_STATE("HOJSON_STATE_NONE")
-            if (c.value == '{' || c.value == '[')
-                return hojson_begin_token(context, c.value);
-            else if (c.value == 0xEF) { /* The UTF-8 Byte Order Marker (BOM) is [EF] BB BF, as hex bytes */
+            if (c.codepoint == '{' || c.codepoint == '[')
+                return hojson_begin_token(context, c.codepoint);
+            else if (c.encoded == 0xEF) { /* The UTF-8 Byte Order Marker (BOM) is [EF] BB BF, as hex bytes */
                 context->state = HOJSON_STATE_UTF8_BOM1;
                 context->column--; /* Don't count this as a column */
-            } else if (c.value == 0xFE) { /* The UTF-16BE BOM is [FE] FF, as hex bytes */
+            } else if (c.encoded == 0xFE) { /* The UTF-16BE BOM is [FE] FF, as hex bytes */
                 context->state = HOJSON_STATE_UTF16BE_BOM;
                 context->column--; /* Don't count this as a column */
-            } else if (c.value == 0xFF) { /* The UTF-16LE BOM is [FF] FE, as hex bytes */
+            } else if (c.encoded == 0xFF) { /* The UTF-16LE BOM is [FF] FE, as hex bytes */
                 context->state = HOJSON_STATE_UTF16LE_BOM;
                 context->column--; /* Don't count this as a column */
-            } else if (!HOJSON_IS_WHITESPACE(c.value))
+            } else if (!HOJSON_IS_WHITESPACE(c.codepoint))
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_UTF8_BOM1: /* The first byte of a UTF-8 byte order marker was found */
             HOJSON_LOG_STATE("HOJSON_STATE_UTF8_BOM1")
             context->column--; /* Don't count this as a column */
-            if (c.value == 0xBB) /* The UTF-8 BOM is EF [BB] BF, as hex bytes */
+            if (c.encoded == 0xBB) /* The UTF-8 BOM is EF [BB] BF, as hex bytes */
                 context->state = HOJSON_STATE_UTF8_BOM2;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
@@ -469,7 +493,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
         case HOJSON_STATE_UTF8_BOM2: /* The second byte of a UTF-8 byte order marker was found */
             HOJSON_LOG_STATE("HOJSON_STATE_UTF8_BOM2")
             context->column--; /* Don't count this as a column */
-            if (c.value == 0xBF) { /* The UTF-8 BOM is EF BB [BF], as hex bytes */
+            if (c.encoded == 0xBF) { /* The UTF-8 BOM is EF BB [BF], as hex bytes */
                 context->state = HOJSON_STATE_NONE;
                 context->encoding = HOJSON_ENCODING_UTF_8;
             } else
@@ -478,7 +502,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
         case HOJSON_STATE_UTF16BE_BOM: /* The first byte of a UTF-16BE byte order marker was found */
             HOJSON_LOG_STATE("HOJSON_STATE_UTF16BE_BOM")
             context->column--; /* Don't count this as a column */
-            if (c.value == 0xFF) { /* The UTF-16BE BOM is FE [FF], as hex bytes */
+            if (c.encoded == 0xFF) { /* The UTF-16BE BOM is FE [FF], as hex bytes */
                 context->state = HOJSON_STATE_NONE;
                 context->encoding = HOJSON_ENCODING_UTF_16_BE;
             } else
@@ -487,25 +511,25 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
         case HOJSON_STATE_UTF16LE_BOM: /* The first byte of a UTF-16LE byte order marker was found */
             HOJSON_LOG_STATE("HOJSON_STATE_UTF16LE_BOM")
             context->column--; /* Don't count this as a column */
-            if (c.value == 0xFE) { /* The UTF-16LE BOM is FF [FE], as hex bytes */
+            if (c.encoded == 0xFE) { /* The UTF-16LE BOM is FF [FE], as hex bytes */
                 context->state = HOJSON_STATE_NONE;
                 context->encoding = HOJSON_ENCODING_UTF_16_LE;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
-        case HOJSON_STATE_NAME_EXPECTED: /* A name is expected due to beginning an object or finding a comma after a pair */
+        case HOJSON_STATE_NAME_EXPECTED: /* A name is expected due to an object begin or a comma after a pair */
             HOJSON_LOG_STATE("HOJSON_STATE_NAME_EXPECTED")
-            if (c.value == '\"') { /* If a name started */
+            if (c.codepoint == '\"') { /* If a name started */
                 HOJSON_STACK->flags |= HOJSON_FLAG_HAS_NAME;
                 context->state = HOJSON_STATE_NAME;
-            } else if (c.value == '}' || c.value == ']') /* If an object or array potentially ended */
-                return hojson_end_token(context, c.value);
-            else if (!HOJSON_IS_WHITESPACE(c.value))
+            } else if (c.codepoint == '}' || c.codepoint == ']') /* If an object or array potentially ended */
+                return hojson_end_token(context, c.codepoint);
+            else if (!HOJSON_IS_WHITESPACE(c.codepoint))
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_NAME: /* A name was started by a double quote (") and characters are being appended */
             HOJSON_LOG_STATE("HOJSON_STATE_NAME")
-            if (c.value == '\"') {
+            if (c.codepoint == '\"') {
                 hojson_code_t code = hojson_append_terminator(context);
                 if (code < HOJSON_NO_OP) /* If appending the terminator failed */
                     return code;
@@ -516,7 +540,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     context->state = HOJSON_STATE_POST_NAME;
                     return HOJSON_NAME;
                 }
-            } else if (c.value == '\\') { /* If a character is being escaped */
+            } else if (c.codepoint == '\\') { /* If a character is being escaped */
                 /* No need to append this character, it'll be discarded anyway. Just transition to escape state. */
                 context->escape_return_state = context->state; /* Branch back to this state when done with the escape */
                 context->state = HOJSON_STATE_ESCAPE;
@@ -527,17 +551,17 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             } break;
         case HOJSON_STATE_POST_NAME: /* A name was ended by a double quote (") and a colon (:) is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_POST_NAME")
-            if (c.value == ':')
+            if (c.codepoint == ':')
                 context->state = HOJSON_STATE_VALUE_EXPECTED;
-            else if (!HOJSON_IS_WHITESPACE(c.value))
+            else if (!HOJSON_IS_WHITESPACE(c.codepoint))
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_VALUE_EXPECTED: /* A value is expected due to a colon (:) or a comma (,) in an array */
             HOJSON_LOG_STATE("HOJSON_STATE_VALUE_EXPECTED")
-            if (c.value == '"') { /* If a double quote (") was found " */
+            if (c.codepoint == '"') { /* If a double quote (") was found " */
                 context->string_value = HOJSON_STACK->end + 1; /* The value's string will begin here */
                 context->state = HOJSON_STATE_STRING_VALUE; /* Expect a string value */
-            } else if (HOJSON_IS_NUMERIC(c.value) || c.value == '-') { /* If a numeric (0-9) or '-' was found */
+            } else if (HOJSON_IS_NUMERIC(c.codepoint) || c.codepoint == '-') { /* If a numeric (0-9) or '-' was found */
                 /* The characters of the number will be appended as they appear with the string value variable being */
                 /* used, temporarily, to build the full string to be parsed as a number */
                 context->string_value = HOJSON_STACK->end + 1; /* The value's string will begin here */
@@ -546,27 +570,27 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     return code;
                 else /* If appending the character succeeded */
                     context->state = HOJSON_STATE_NUMBER_VALUE; /* Expect a number value */
-            } else if (c.value == 't') /* If the T in "true" was found */
+            } else if (c.codepoint == 't') /* If the T in "true" was found */
                 context->state = HOJSON_STATE_TRUE_VALUE_T; /* Expect the rest of "true" */
-            else if (c.value == 'f') /* If the F in "false" was found */
+            else if (c.codepoint == 'f') /* If the F in "false" was found */
                 context->state = HOJSON_STATE_FALSE_VALUE_F; /* Expect the rest of "false" */
-            else if (c.value == 'n') /* If the N in "null" was found */
+            else if (c.codepoint == 'n') /* If the N in "null" was found */
                 context->state = HOJSON_STATE_NULL_VALUE_N; /* "Expect the rest of "null" */
-            else if (c.value == '{' || c.value == '[') /* If a beginning token ({ or [) was found */
-                return hojson_begin_token(context, c.value);
-            else if (c.value == '}' || c.value == ']') /* If an ending token (} or ]) was found */
-                return hojson_end_token(context, c.value);
-            else if (!HOJSON_IS_WHITESPACE(c.value))
+            else if (c.codepoint == '{' || c.codepoint == '[') /* If a beginning token ({ or [) was found */
+                return hojson_begin_token(context, c.codepoint);
+            else if (c.codepoint == '}' || c.codepoint == ']') /* If an ending token (} or ]) was found */
+                return hojson_end_token(context, c.codepoint);
+            else if (!HOJSON_IS_WHITESPACE(c.codepoint))
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_STRING_VALUE: /* A double quote (") was found after a colon (:) or in an array */
             HOJSON_LOG_STATE("HOJSON_STATE_STRING_VALUE")
-            if (c.value == '"') {
+            if (c.codepoint == '"') {
                 context->value_type = HOJSON_TYPE_STRING;
                 HOJSON_STACK->flags |= HOJSON_FLAG_POST_VALUE_CLEAN_UP; /* Clean up with the next hojson_parse() */
                 context->state = HOJSON_STATE_POST_VALUE;
                 return HOJSON_VALUE;
-            } else if (c.value == '\\') { /* If a character is being escaped */
+            } else if (c.codepoint == '\\') { /* If a character is being escaped */
                 /* No need to append this character, it'll be discarded anyway. Just transition to escape state. */
                 context->escape_return_state = context->state; /* Branch back to this state when done with the escape */
                 context->state = HOJSON_STATE_ESCAPE;
@@ -577,8 +601,8 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             } break;
         case HOJSON_STATE_ESCAPE: { /* A backslash (\) was found and an escaped or Unicode character is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_ESCAPE")
-            uint32_t characterToAppend;
-            switch (c.value) {
+            unsigned characterToAppend;
+            switch (c.codepoint) {
             /* The non-default cases here represent the only characters that are acceptable after a backslash */
             case '"':  characterToAppend = '"';  break;
             case '\\': characterToAppend = '\\'; break;
@@ -589,9 +613,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             case 'r':  characterToAppend = '\r'; break;
             case 't':  characterToAppend = '\t'; break;
             /* 'u' is special: it is a Unicode substitution where four hex characters are expected to follow */
-            case 'u':
-                context->state = HOJSON_STATE_UNICODE_1;
-                continue;
+            case 'u': context->state = HOJSON_STATE_UNICODE_1;   continue;
             /* All other characters are invalid syntax */
             default: context->state = HOJSON_STATE_ERROR_SYNTAX; continue;
             }
@@ -606,36 +628,36 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             } } break;
         case HOJSON_STATE_UNICODE_1: /* Unicode escapement notation was found, a hex number is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_1")
-            if (HOJSON_IS_HEX_CHAR(c.value)) {
+            if (HOJSON_IS_HEX_CHAR(c.codepoint)) {
                 /* Hexadecimal (base-16) can be converted to decimal (base-ten) iteratively. For example, given the */
                 /* hex value ABCD, the decimal equivalent is (A * 16^3) + (B * 16^2) + (C * 16^1) + (D * 16^0). This */
                 /* state is dedicated to the most significant digit so we multiply by 16^3 (4096). */
                 /* Note: the use of the integer number value variable is only temporary. */
-                context->integer_value = hojson_hex_character_to_decimal(c.value) * 4096;
+                context->integer_value = hojson_hex_character_to_decimal(c.codepoint) * 4096;
                 context->state = HOJSON_STATE_UNICODE_2;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_UNICODE_2: /* Unicode escapement notation was found, a second hex number is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_2")
-            if (HOJSON_IS_HEX_CHAR(c.value)) {
-                context->integer_value += hojson_hex_character_to_decimal(c.value) * 256; /* 16^2 */
+            if (HOJSON_IS_HEX_CHAR(c.codepoint)) {
+                context->integer_value += hojson_hex_character_to_decimal(c.codepoint) * 256; /* 16^2 */
                 context->state = HOJSON_STATE_UNICODE_3;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_UNICODE_3: /* Unicode escapement notation was found, a third hex number is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_3")
-            if (HOJSON_IS_HEX_CHAR(c.value)) {
-                context->integer_value += hojson_hex_character_to_decimal(c.value) * 16; /* 16^1 */
+            if (HOJSON_IS_HEX_CHAR(c.codepoint)) {
+                context->integer_value += hojson_hex_character_to_decimal(c.codepoint) * 16; /* 16^1 */
                 context->state = HOJSON_STATE_UNICODE_4;
             } else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_UNICODE_4: /* Unicode escapement notation was found, a fourth hex number is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_UNICODE_4")
-            if (HOJSON_IS_HEX_CHAR(c.value)) {
-                context->integer_value += hojson_hex_character_to_decimal(c.value) * 1; /* 16^0 */
+            if (HOJSON_IS_HEX_CHAR(c.codepoint)) {
+                context->integer_value += hojson_hex_character_to_decimal(c.codepoint) * 1; /* 16^0 */
                 hojson_character_t encodedCharacter = hojson_encode_character(context->integer_value,
                     context->encoding);
                 hojson_code_t code = hojson_append_character(context, encodedCharacter);
@@ -651,11 +673,11 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             break;
         case HOJSON_STATE_NUMBER_VALUE: /* A number character (0-9) was found after a colon (:) or in an array */
             HOJSON_LOG_STATE("HOJSON_STATE_NUMBER_VALUE")
-            if (HOJSON_IS_NUMERIC(c.value)) {
+            if (HOJSON_IS_NUMERIC(c.codepoint)) {
                 hojson_code_t code = hojson_append_character(context, c);
                 if (code < HOJSON_NO_OP) /* If appending the character failed */
                     return code;
-            } else if (c.value == '.') {
+            } else if (c.codepoint == '.') {
                 if (HOJSON_STACK->flags & HOJSON_FLAG_DECIMAL) /* If the number already has a decimal */
                     context->state = HOJSON_STATE_ERROR_SYNTAX;
                 else {
@@ -665,7 +687,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     else /* If appending the character succeeded */
                         HOJSON_STACK->flags |= HOJSON_FLAG_DECIMAL; /* Set the "has a decimal" flag */
                 }
-            } else if (c.value == 'e' || c.value == 'E') {
+            } else if (c.codepoint == 'e' || c.codepoint == 'E') {
                 if (HOJSON_STACK->flags & HOJSON_FLAG_EXPONENT) /* If the number already has an 'e' or 'E' */
                     context->state = HOJSON_STATE_ERROR_SYNTAX;
                 else {
@@ -675,7 +697,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     else /* If appending the character succeeded */
                         HOJSON_STACK->flags |= HOJSON_FLAG_EXPONENT; /* Set the "has an exponent" flag */
                 }
-            } else if (c.value == '-' || c.value == '+') {
+            } else if (c.codepoint == '-' || c.codepoint == '+') {
                 if (!(HOJSON_STACK->flags & HOJSON_FLAG_EXPONENT)) { /* If not preceded by an 'e' or 'E' */
                     context->state = HOJSON_STATE_ERROR_SYNTAX;
                 } else if (HOJSON_STACK->flags & HOJSON_FLAG_PLUS_OR_MINUS) /* If there was a previous '+' or '-' */
@@ -687,7 +709,8 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     else /* If appending the character succeeded */
                         HOJSON_STACK->flags |= HOJSON_FLAG_PLUS_OR_MINUS; /* Set the "has a + or -" flag */
                 }
-            } else if (HOJSON_IS_WHITESPACE(c.value) || c.value == ',' || c.value == ']' || c.value == '}') {
+            } else if (HOJSON_IS_WHITESPACE(c.codepoint) || c.codepoint == ',' || c.codepoint == ']' ||
+                    c.codepoint == '}') {
                 /* Parse the string from the JSON content as a number. Strings with decimals or exponents will be */
                 /* parsed as floating-point values. Strings without both will be parsed as integer values. */
                 /* Note: while E notation could potentially describe an integer, atoi() does not support E notation. */
@@ -706,7 +729,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                 HOJSON_STACK->flags |= HOJSON_FLAG_POST_VALUE_CLEAN_UP; /* Clean up with the next hojson_parse() */
                 context->state = HOJSON_STATE_POST_VALUE;
 
-                if (!HOJSON_IS_WHITESPACE(c.value)) /* If a ',' or ']' or '}' ended the number value */
+                if (!HOJSON_IS_WHITESPACE(c.codepoint)) /* If a ',' or ']' or '}' ended the number value */
                     hojson_stay(context); /* Rewind by one character so this character is parsed */
 
                 return HOJSON_VALUE;
@@ -715,21 +738,21 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             break;
         case HOJSON_STATE_TRUE_VALUE_T: /* A 't' was found after a colon (:) or in an array, an 'r' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_TRUE_VALUE_T")
-            if (c.value == 'r')
+            if (c.codepoint == 'r')
                 context->state = HOJSON_STATE_TRUE_VALUE_R;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_TRUE_VALUE_R: /* An 'r' was found after a 't', a 'u' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_TRUE_VALUE_R")
-            if (c.value == 'u')
+            if (c.codepoint == 'u')
                 context->state = HOJSON_STATE_TRUE_VALUE_U;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_TRUE_VALUE_U: /* A 'u' was found after an 'r', an 'e' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_TRUE_VALUE_U")
-            if (c.value == 'e') {
+            if (c.codepoint == 'e') {
                 context->value_type = HOJSON_TYPE_BOOLEAN; /* Indicate the value is a boolean type */
                 context->bool_value = 1; /* Non-zero values evalulate to true */
                 HOJSON_STACK->flags |= HOJSON_FLAG_POST_VALUE_CLEAN_UP; /* Clean up with the next hojson_parse() */
@@ -740,28 +763,28 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             break;
         case HOJSON_STATE_FALSE_VALUE_F: /* An 'f' was found after a colon (:) or in an array, an 'a' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_FALSE_VALUE_F")
-            if (c.value == 'a')
+            if (c.codepoint == 'a')
                 context->state = HOJSON_STATE_FALSE_VALUE_A;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_FALSE_VALUE_A: /* An 'a' was found after an 'f', an 'l' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_FALSE_VALUE_A")
-            if (c.value == 'l')
+            if (c.codepoint == 'l')
                 context->state = HOJSON_STATE_FALSE_VALUE_L;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_FALSE_VALUE_L: /* An 'l' was found after an 'a', an 's' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_FALSE_VALUE_L")
-            if (c.value == 's')
+            if (c.codepoint == 's')
                 context->state = HOJSON_STATE_FALSE_VALUE_S;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_FALSE_VALUE_S: /* An 's' was found after an 'l', an 'e' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_FALSE_VALUE_S")
-            if (c.value == 'e') {
+            if (c.codepoint == 'e') {
                 context->value_type = HOJSON_TYPE_BOOLEAN; /* Indicate the value is a boolean type */
                 context->bool_value = 0; /* Zero evalulates to false */
                 HOJSON_STACK->flags |= HOJSON_FLAG_POST_VALUE_CLEAN_UP; /* Clean up with the next hojson_parse() */
@@ -772,21 +795,21 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             break;
         case HOJSON_STATE_NULL_VALUE_N: /* An 'n' was found after a colon (:) or in an array, a 'u' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_NULL_VALUE_N")
-            if (c.value == 'u')
+            if (c.codepoint == 'u')
                 context->state = HOJSON_STATE_NULL_VALUE_U;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_NULL_VALUE_U: /* A 'u' was found after an 'n', an 'l' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_NULL_VALUE_U")
-            if (c.value == 'l')
+            if (c.codepoint == 'l')
                 context->state = HOJSON_STATE_NULL_VALUE_L;
             else
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         case HOJSON_STATE_NULL_VALUE_L: /* An 'l' was found after a 'u', another 'l' is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_NULL_VALUE_L")
-            if (c.value == 'l') {
+            if (c.codepoint == 'l') {
                 context->value_type = HOJSON_TYPE_NULL; /* Indicate the value is a null/unset type */
                 HOJSON_STACK->flags |= HOJSON_FLAG_POST_VALUE_CLEAN_UP; /* Clean up with the next hojson_parse() */
                 context->state = HOJSON_STATE_POST_VALUE;
@@ -796,9 +819,9 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
             break;
         case HOJSON_STATE_POST_VALUE: /* A value was found, a comma (,) or closing token (} or ]) is expected */
             HOJSON_LOG_STATE("HOJSON_STATE_POST_VALUE")
-            if (c.value == '}' || c.value == ']')
-                return hojson_end_token(context, c.value);
-            else if (c.value == ',') {
+            if (c.codepoint == '}' || c.codepoint == ']')
+                return hojson_end_token(context, c.codepoint);
+            else if (c.codepoint == ',') {
                 if (HOJSON_STACK->flags & HOJSON_FLAG_COMMA)
                     context->state = HOJSON_STATE_ERROR_SYNTAX;
                 else {
@@ -808,7 +831,7 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
                     else
                         context->state = HOJSON_STATE_NAME_EXPECTED;
                 }
-            } else if (!HOJSON_IS_WHITESPACE(c.value))
+            } else if (!HOJSON_IS_WHITESPACE(c.codepoint))
                 context->state = HOJSON_STATE_ERROR_SYNTAX;
             break;
         } /* switch (context->state) */
@@ -819,7 +842,8 @@ HOJSON_DECL hojson_code_t hojson_parse(hojson_context_t* context, const char* js
 
 void hojson_stay(hojson_context_t* context) {
     /* For the X-byte step forward, take an X-byte step back. With this, parsing will return to the last character. */
-    context->iterator -= context->bytes_iterated;
+    context->iterator = context->previous_iterator;
+    context->stream_length = context->previous_stream_length;
     context->column--;
 }
 
@@ -867,14 +891,14 @@ hojson_code_t hojson_append_character(hojson_context_t* context, hojson_characte
         return HOJSON_ERROR_INSUFFICIENT_MEMORY;
     }
 
-    memcpy(HOJSON_STACK->end + 1, &(c.raw), c.bytes); /* Copy the character to the stack */
+    memcpy(HOJSON_STACK->end + 1, &(c.encoded), c.bytes); /* Copy the character to the stack */
     HOJSON_STACK->end += c.bytes; /* Redirect the end pointer to the new end just after the appended character */
     return HOJSON_NO_OP;
 }
 
 hojson_code_t hojson_append_terminator(hojson_context_t* context) {
     /* If the document is encoded with UTF-16, two bytes will be appended. One byte otherwise. */
-    uint8_t bytes = context->encoding >= HOJSON_ENCODING_UTF_16_BE ? 2 : 1;
+    size_t bytes = context->encoding >= HOJSON_ENCODING_UTF_16_BE ? 2 : 1;
     if (HOJSON_STACK->end + bytes >= context->buffer + context->buffer_length) {
         hojson_stay(context); /* Rewind by one character */
         context->error_return_state = context->state;
@@ -959,10 +983,11 @@ hojson_code_t hojson_end_token(hojson_context_t* context, char token) {
         return HOJSON_OBJECT_END;
 }
 
-hojson_character_t hojson_decode_character(const char* str, size_t str_length, uint8_t encoding) {
+hojson_character_t hojson_decode_character(const char* str, size_t str_length, int encoding) {
     hojson_character_t c;
-    c.raw = c.value = 0; /* These default values are not valid so parsing will cease if returned */
+    c.encoded = c.codepoint = 0; /* These default values are not valid so parsing will cease if returned */
     c.bytes = 0;
+
     switch (encoding) {
     case HOJSON_ENCODING_UNKNOWN:
         c.bytes = 1;
@@ -1001,15 +1026,15 @@ hojson_character_t hojson_decode_character(const char* str, size_t str_length, u
     /* If the string doesn't have enough bytes in it to decode this character */
     if (c.bytes > str_length) {
         /* Set the decoded value to the maximum possible to indicate a failure, zero the rest, and return early */
-        c.value = UINT32_MAX;
-        c.raw = 0;
+        c.codepoint = UINT32_MAX;
+        c.encoded = 0;
         c.bytes = 0;
         return c;
     }
 
     switch (encoding) {
     case HOJSON_ENCODING_UNKNOWN:
-        c.value = (uint32_t)str[0] & 0x000000FF; /* The mask ensures the remainder of the bits are zero */
+        c.codepoint = str[0];
         break;
     case HOJSON_ENCODING_UTF_8:
         if (c.bytes == 1) {
@@ -1019,103 +1044,99 @@ hojson_character_t hojson_decode_character(const char* str, size_t str_length, u
             /* resulting value, casts the masked byte to an unsigned 32-bit integer, shifts those bits to the left to */
             /* place them at the indexes they're expected in the value, and then bitwise ORs these components into a */
             /* single unsigned 32-bit integer. This one-byte case does not need any shift but the remaining cases do. */
-            c.value = (uint32_t)(str[0] & 0x7F);
+            c.codepoint = (unsigned)(str[0] & 0x7F);
         } else if (c.bytes == 2) {
             /* Two-byte UTF-8 characters are encoded as 110XXXXX 10XXXXXX */
-            c.value = ((uint32_t)(str[0] & 0x1F) << 6) | (uint32_t)(str[1] & 0x3F);
+            c.codepoint = ((unsigned)(str[0] & 0x1F) << 6) | (unsigned)(str[1] & 0x3F);
         } else if (c.bytes == 3) {
             /* Three-byte UTF-8 characters are encoded as 1110XXXX 10XXXXXX 10XXXXXX */
-            c.value = ((uint32_t)(str[0] & 0x0F) << 12) | ((uint32_t)(str[1] & 0x3F) << 6) |
-                       (uint32_t)(str[2] & 0x3F);
+            c.codepoint = ((unsigned)(str[0] & 0x0F) << 12) | ((unsigned)(str[1] & 0x3F) << 6) |
+                          ((unsigned)(str[2] & 0x3F) << 0);
         } else if (c.bytes == 4) {
             /* Four-byte UTF-8 characters are encoded as 11110XXX 10XXXXXX 10XXXXXX 10XXXXXX */
-            c.value = ((uint32_t)(str[0] & 0x07) << 18) | ((uint32_t)(str[1] & 0x3F) << 12) |
-                      ((uint32_t)(str[2] & 0x3F) << 6)  |  (uint32_t)(str[3] & 0x3F);
+            c.codepoint = ((unsigned)(str[0] & 0x07) << 18) | ((unsigned)(str[1] & 0x3F) << 12) |
+                          ((unsigned)(str[2] & 0x3F) << 6)  | ((unsigned)(str[3] & 0x3F) << 0);
         } break;
     case HOJSON_ENCODING_UTF_16_BE:
         if (c.bytes == 2) {
             /* Concatenate the two bytes together to retrieve the original value */
-            c.value = ((uint32_t)str[0] << 8) | (uint32_t)str[1];
+            c.codepoint = ((unsigned)str[0] << 8) | (unsigned)str[1];
         } else if (c.bytes == 4) {
             /* Four-byte UTF-16 characters are encoded as 110110XX XXXXXXXX 110111XX XXXXXXXX after first subtracting */
             /* 0x00010000 from the value. Here, that subtracted value is reconstructed and 0x00010000 is added back. */
-            c.value = (((uint32_t)(str[0] & 0x03) << 18) | ((uint32_t)str[1] << 16) |
-                       ((uint32_t)(str[2] & 0x03) << 8)  |  (uint32_t)str[3]) + 0x00010000;
+            c.codepoint = (((unsigned)(str[0] & 0x03) << 18) | ((unsigned)str[1] << 16) |
+                           ((unsigned)(str[2] & 0x03) << 8)  | ((unsigned)str[3]) << 0) + 0x00010000;
         }
         break;
     case HOJSON_ENCODING_UTF_16_LE:
         if (c.bytes == 2)
-            c.value = ((uint32_t)str[1] << 8) | (uint32_t)str[0];
+            c.codepoint = ((unsigned)str[1] << 8) | (unsigned)(str[0] << 0);
         else if (c.bytes == 4) {
-            c.value = (((uint32_t)(str[1] & 0x03) << 18) | ((uint32_t)str[0] << 16) |
-                       ((uint32_t)(str[3] & 0x03) << 8)  |  (uint32_t)str[2]) + 0x00010000;
+            c.codepoint = (((unsigned)(str[1] & 0x03) << 18) | ((unsigned)str[0] << 16) |
+                           ((unsigned)(str[3] & 0x03) << 8)  | ((unsigned)str[2] << 0)) + 0x00010000;
         }
         break;
     }
 
-    switch (c.bytes) {
-        /* The method here takes the char pointer, casts it to an unsigned 32-bit integer pointer (pointing to four */
-        /* bytes rather than one), dereferences it to get its integer value, applies a mask to zero any unwanted bits */
-        /* (e.g. the 0x000000FF mask retains just the last eight bits), and assigns this value to 'raw' value. */
-        case 1: c.raw = *(uint32_t*)str & 0x000000FF; break;
-        case 2: c.raw = *(uint32_t*)str & 0x0000FFFF; break;
-        case 3: c.raw = *(uint32_t*)str & 0x00FFFFFF; break;
-        case 4: c.raw = *(uint32_t*)str; break;
-    }
+    memcpy(&(c.encoded), str, c.bytes); /* Copy the bytes of the character from the pointed-to string into c.encoded */
 
     return c;
 }
 
-hojson_character_t hojson_encode_character(uint32_t value, uint8_t encoding) {
+hojson_character_t hojson_encode_character(unsigned codepoint, int encoding) {
     hojson_character_t c;
-    c.value = value;
-    c.raw = 0;
+    c.codepoint = codepoint;
+    c.encoded = 0;
+
+    /* This variable will make it easier to assign values to 'c.endoded' without difficult-to-read casts */
+    char* str = (char*)&(c.encoded);
 
     switch (encoding) {
     case HOJSON_ENCODING_UNKNOWN: /* If the encoding is somehow not specified, assume UTF-8 */
     case HOJSON_ENCODING_UTF_8:
-        if (value <= 0x0000007F) { /* If the value will fit into one byte */
-            c.raw = value;
+        if (codepoint <= 0x0000007F) { /* If the codepoint will fit into one byte */
+            c.encoded = codepoint;
             c.bytes = 1;
-        } else if (value >= 0x000080 && value <= 0x000007FF) { /* If the value will fit into two bytes */
-            /* For a value with bits XXXXXAAA AABBBBBB we want to transform the bits to the form 110AAAAA 10BBBBBB. */
-            /* The method here treats c.raw as an array of unsigned, eight-bit integers. This is done to assign bytes */
-            /* individually for the sake of endianness where UTF-8 is big endian. The value is masked in order to */
-            /* zero any bits that are not used in the byte being assigned, then shifted all the way to the right. */
-            /* prefixed "0xC0" and "0x80" bitwise ORs prepend the UTF-8 markers 110 and 10, respectively. The */
-            ((uint8_t*)&c.raw)[0] = 0xC0 | (uint8_t)((value & 0x0000007C0) >> 6); /* 110AAAAAA */
-            ((uint8_t*)&c.raw)[1] = 0x80 | (uint8_t) (value & 0x0000000FF); /* 10BBBBBB */
+        } else if (codepoint >= 0x000080 && codepoint <= 0x000007FF) { /* If the codepoint will fit into two bytes */
+            /* For codepoints with bits XXXXXAAA AABBBBBB, we want to transform the bits to the 110AAAAA 10BBBBBB. */
+            /* The method here treats c.encoded as an array of unsigned, eight-bit integers. This is done to assign */
+            /* bytes individually for the sake of endianness where UTF-8 is big endian. The codepoint is masked in */
+            /* order to zero any bits that are not used in the byte being assigned, then shifted all the way to the */
+            /* right. The prefixed "0xC0" and "0x80" bitwise ORs prepend the UTF-8 markers 110 and 10, respectively. */
+            str[0] = 0xC0 | (char)((codepoint & 0x0000007C0) >> 6); /* 110AAAAAA */
+            str[1] = 0x80 | (char)((codepoint & 0x0000000FF) >> 0); /* 10BBBBBB */
             c.bytes = 2;
-        } else if ((value >= 0x00000800 && value <= 0x0000D7FF) || (value >= 0x0000E000 && value <= 0x0000FFFF)) {
-            /* For a value with bits AAAABBBB BBCCCCCC we want 1110AAAA 10BBBBBB 10CCCCCC */
-            ((uint8_t*)&c.raw)[0] = 0xE0 | (uint8_t)((value & 0x0000F000) >> 12); /* 1110AAAA */
-            ((uint8_t*)&c.raw)[1] = 0x80 | (uint8_t)((value & 0x00000FC0) >> 6); /* 10BBBBBB */
-            ((uint8_t*)&c.raw)[2] = 0x80 | (uint8_t) (value & 0x0000003F); /* 10CCCCCC */
+        } else if ((codepoint >= 0x00000800 && codepoint <= 0x0000D7FF) ||
+                (codepoint >= 0x0000E000 && codepoint <= 0x0000FFFF)) {
+            /* For codepoints with bits AAAABBBB BBCCCCCC we want 1110AAAA 10BBBBBB 10CCCCCC */
+            str[0] = 0xE0 | (char)((codepoint & 0x0000F000) >> 12); /* 1110AAAA */
+            str[1] = 0x80 | (char)((codepoint & 0x00000FC0) >> 6);  /* 10BBBBBB */
+            str[2] = 0x80 | (char)((codepoint & 0x0000003F) >> 0);  /* 10CCCCCC */
             c.bytes = 3;
-        } else if (value >= 0x00010000 && value <= 0x0010FFFF) {
-            /* For a value with bits XXXAAABB BBBBCCCC CCDDDDDD we want 11110AAA 10BBBBBB 10CCCCCC 10DDDDDD */
-            ((uint8_t*)&c.raw)[0] = 0xF0 | (uint8_t)((value & 0x001C0000) >> 18) ; /* 11110AAA */
-            ((uint8_t*)&c.raw)[1] = 0x80 | (uint8_t)((value & 0x0003F000) >> 12); /* 10BBBBBB */
-            ((uint8_t*)&c.raw)[2] = 0x80 | (uint8_t)((value & 0x00000FC0) >> 6); /* 10CCCCCC */
-            ((uint8_t*)&c.raw)[3] = 0x80 | (uint8_t) (value & 0x0000003F); /* 10DDDDDD */
+        } else if (codepoint >= 0x00010000 && codepoint <= 0x0010FFFF) {
+            /* For codepoints with bits XXXAAABB BBBBCCCC CCDDDDDD we want 11110AAA 10BBBBBB 10CCCCCC 10DDDDDD */
+            str[0] = 0xF0 | (char)((codepoint & 0x001C0000) >> 18); /* 11110AAA */
+            str[1] = 0x80 | (char)((codepoint & 0x0003F000) >> 12); /* 10BBBBBB */
+            str[2] = 0x80 | (char)((codepoint & 0x00000FC0) >> 6);  /* 10CCCCCC */
+            str[3] = 0x80 | (char)((codepoint & 0x0000003F) >> 0);  /* 10DDDDDD */
             c.bytes = 4;
-        } else /* If the reference's value is not valid */
+        } else /* If the codepoint is not valid */
             c.bytes = 0; /* Don't even try */
         break;
     case HOJSON_ENCODING_UTF_16_BE:
-        if (value <= 0x0000D7FF || (value >= 0x0000E000 && value <= 0x0000FFFF)) { /* If the value fits in two bytes */
-            ((uint8_t*)&c.raw)[0] = (uint8_t)((value & 0x0000FF00) >> 8);
-            ((uint8_t*)&c.raw)[1] = (uint8_t) (value & 0x000000FF);
+        if (codepoint <= 0x0000D7FF || (codepoint >= 0x0000E000 && codepoint <= 0x0000FFFF)) { /* Fits in two bytes */
+            str[0] = (char)((codepoint & 0x0000FF00) >> 8);
+            str[1] = (char) (codepoint & 0x000000FF);
             c.bytes = 2;
-        } else if (value >= 0x00010000 && value <= 0x0010FFFF) { /* If the value fits in four bytes */
-            /* For a value - 0x00010000 with bits XXXXXXXX XXXXAABB BBBBBBCC DDDDDDDD we want to transform the bits */
+        } else if (codepoint >= 0x00010000 && codepoint <= 0x0010FFFF) { /* If the codepoint fits in four bytes */
+            /* For codepoint - 0x00010000 with bits XXXXXXXX XXXXAABB BBBBBBCC DDDDDDDD we want to transform the bits */
             /* to the form 110110AA BBBBBBBB 110111CC DDDDDDDD. When decoded, as per UTF-16, 0x00010000 is added. */
             /* The prefixed "0xD8" and "0xDC" bitwise ORs prepend the UTF-16 markers 110110 and 110111, respectively. */
-            value -= 0x00010000;
-            ((uint8_t*)&c.raw)[0] = 0xD8 | (uint8_t)((value & 0x000C0000) >> 20); /* 110110AA */
-            ((uint8_t*)&c.raw)[1] =        (uint8_t)((value & 0x0003FC00) >> 18); /* BBBBBBBB */
-            ((uint8_t*)&c.raw)[2] = 0xDC | (uint8_t)((value & 0x00000300) >> 8); /* 110111CC */
-            ((uint8_t*)&c.raw)[3] =        (uint8_t) (value & 0x000000FF); /* DDDDDDDD */
+            codepoint -= 0x00010000;
+            str[0] = 0xD8 | (char)((codepoint & 0x000C0000) >> 20); /* 110110AA */
+            str[1] =        (char)((codepoint & 0x0003FC00) >> 18); /* BBBBBBBB */
+            str[2] = 0xDC | (char)((codepoint & 0x00000300) >> 8);  /* 110111CC */
+            str[3] =        (char)((codepoint & 0x000000FF) >> 0);  /* DDDDDDDD */
             c.bytes = 4;
         } else /* If the reference's value is not valid */
             c.bytes = 0; /* Don't even try */
@@ -1123,16 +1144,16 @@ hojson_character_t hojson_encode_character(uint32_t value, uint8_t encoding) {
     case HOJSON_ENCODING_UTF_16_LE:
         /* UTF-16LE (Little Endian) is just like UTF-16BE (Big Endian) with the reverse endianness meaning that the */
         /* operations here are identical to those above but the indexes have been changed to reflect endianness */
-        if (value <= 0x0000D7FF || (value >= 0x0000E000 && value <= 0x0000FFFF)) {
-            ((uint8_t*)&c.raw)[1] = (uint8_t)((value & 0x0000FF00) >> 8);
-            ((uint8_t*)&c.raw)[0] = (uint8_t) (value & 0x000000FF);
+        if (codepoint <= 0x0000D7FF || (codepoint >= 0x0000E000 && codepoint <= 0x0000FFFF)) {
+            str[1] = (char)((codepoint & 0x0000FF00) >> 8);
+            str[0] = (char)((codepoint & 0x000000FF) >> 0);
             c.bytes = 2;
-        } else if (value >= 0x00010000 && value <= 0x0010FFFF) {
-            value -= 0x00010000;
-            ((uint8_t*)&c.raw)[3] = 0xD8 | (uint8_t)((value & 0x000C0000) >> 20); /* 110110AA */
-            ((uint8_t*)&c.raw)[2] =        (uint8_t)((value & 0x0003FC00) >> 18); /* BBBBBBBB */
-            ((uint8_t*)&c.raw)[1] = 0xDC | (uint8_t)((value & 0x00000300) >> 8); /* 110111CC */
-            ((uint8_t*)&c.raw)[0] =        (uint8_t) (value & 0x000000FF); /* DDDDDDDD */
+        } else if (codepoint >= 0x00010000 && codepoint <= 0x0010FFFF) {
+            codepoint -= 0x00010000;
+            str[3] = 0xD8 | (char)((codepoint & 0x000C0000) >> 20); /* 110110AA */
+            str[2] =        (char)((codepoint & 0x0003FC00) >> 18); /* BBBBBBBB */
+            str[1] = 0xDC | (char)((codepoint & 0x00000300) >> 8);  /* 110111CC */
+            str[0] =        (char)((codepoint & 0x000000FF) >> 0);  /* DDDDDDDD */
             c.bytes = 4;
         } else
             c.bytes = 0;
@@ -1142,8 +1163,8 @@ hojson_character_t hojson_encode_character(uint32_t value, uint8_t encoding) {
     return c;
 }
 
-uint32_t hojson_hex_character_to_decimal(uint32_t character) {
-    switch (character) {
+long hojson_hex_character_to_decimal(unsigned codepoint) {
+    switch (codepoint) {
     case '0':
     default:  return 0;
     case '1': return 1;

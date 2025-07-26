@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
 
         FILE* file;
         if ((file = fopen(documents[document_index], "r")) == NULL) {
-            fprintf(stderr, "Couldn't open document: %s\n", documents[document_index]);
+            fprintf(stderr, "Couldn't open document: \"%s\"\n", documents[document_index]);
             return EXIT_FAILURE;
         }
 
@@ -53,14 +53,14 @@ int main(int argc, char** argv) {
         fseek(file, 0, SEEK_END); /* Seek to the end of the file */
         content_length = ftell(file); /* Take the position in the file, the end, as the length */
         fseek(file, 0, SEEK_SET); /* Seek back to the beginning of the file to iterate through it */
-        printf("\n\n\n --------- Parsing JSON document %s of length %lu\n", documents[document_index],
+        printf("\n\n\n  --------- Parsing JSON document \"%s\" of length %lu\n", documents[document_index],
             (unsigned long)content_length);
 
         hojson_context_t hojson_context[1];
         size_t hojson_buffer_length = content_length / 8; /* Use a small length to force multiple line reads */
         void* hojson_buffer = malloc(hojson_buffer_length);
         hojson_init(hojson_context, hojson_buffer, hojson_buffer_length);
-        printf(" --- Using an initial buffer length of %lu\n", (unsigned long)hojson_buffer_length);
+        printf("  --- Using an initial buffer length of %lu\n", (unsigned long)hojson_buffer_length);
 
         size_t bytes_read;
         char content[CONTENT_BUFFER_LENGTH], content_copy[CONTENT_BUFFER_LENGTH], *content_pointer = content;
@@ -74,11 +74,11 @@ int main(int argc, char** argv) {
                 if (code < HOJSON_NO_OP) { /* If an error was returned */
                     if (code == HOJSON_ERROR_UNEXPECTED_EOF) { /* Recoverable error */
                         /* Recover by exiting this loop leading to more JSON content being read from disk */
-                        printf(" --- Parsed to end of the current content buffer - continuing to next string...\n");
+                        printf("  --- Parsed to end of the current content buffer - continuing to next string...\n");
                         break;
                     } else if (code == HOJSON_ERROR_INSUFFICIENT_MEMORY) { /* Recoverable error */
                         /* Recover by doubling the size of the buffer and telling hojson to use it */
-                        printf(" --- Ran out of memory - increasing buffer from %lu to %lu\n",
+                        printf("  --- Ran out of memory - increasing buffer from %lu to %lu\n",
                             (unsigned long)hojson_buffer_length, (unsigned long)hojson_buffer_length * 2);
                         hojson_buffer_length *= 2;
                         void* new_buffer = malloc(hojson_buffer_length);
@@ -89,12 +89,13 @@ int main(int argc, char** argv) {
                         /* Some of the test documents are invalid and errors are expected. For them, just continue to */
                         /* the next document. For the rest, the valid documents, the error can't go ignored. */
                         if (document_index < NUM_INVALID_DOCUMENTS) { /* The document was invalid, this is expected */
-                            printf(" --- Document %s returned error code %d on line %d, column %d as expected. Pass.\n",
-                                documents[document_index], code, hojson_context->line, hojson_context->column);
+                            printf("  --- Document %s returned error code %d on line %d, column %d as expected. "
+                                "Pass.\n", documents[document_index], code, hojson_context->line,
+                                hojson_context->column);
                             is_done_with_document = 1;
                             break;
                         } else { /* The document was valid and something is wrong */
-                            fprintf(stderr, "\n\n Error on line %d, column %d: ", hojson_context->line,
+                            fprintf(stderr, "\n\n  Error on line %d, column %d: ", hojson_context->line,
                                 hojson_context->column);
                             switch(code)
                             {
@@ -113,11 +114,11 @@ int main(int argc, char** argv) {
                     /* Hopefully, this is one of the valid documents where we expect to eventually receive this code. */
                     /* But if this is not one of those documents, the test has failed. */
                     if (document_index < NUM_INVALID_DOCUMENTS) { /* The document was invalid, an error was expected */
-                        fprintf(stderr, "\n\n Parsing of document %s completed successfully but was expected to fail\n",
-                            documents[document_index]);
+                        fprintf(stderr, "\n\n  Parsing of document \"%s\" completed successfully but was expected to "
+                            "fail\n", documents[document_index]);
                         return EXIT_FAILURE;
                     } else { /* The document was valid and parsed to the end of it so we're done with it */
-                        printf(" --- Parsing of document %s completed without error. Pass.\n",
+                        printf("  --- Parsing of document \"%s\" completed without error. Pass.\n",
                             documents[document_index]);
                         is_done_with_document = 1;
                         break;
@@ -128,7 +129,7 @@ int main(int argc, char** argv) {
                         if (hojson_context->name == NULL) {
                             fprintf(stderr, "\n\nReceived a name return code but no name was provided\n");
                         } else
-                            printf("         name: \"%s\"\n", hojson_context->name);
+                            printf("          name: \"%s\"\n", hojson_context->name);
                         break;
                     case HOJSON_VALUE:
                         switch (hojson_context->value_type) {
@@ -137,19 +138,19 @@ int main(int argc, char** argv) {
                             fprintf(stderr, "\n\nReceived a value return code but no value was provided\n");
                             return EXIT_FAILURE;
                         case HOJSON_TYPE_INTEGER:
-                            printf("        value: %ld", hojson_context->integer_value);
+                            printf("         value: %ld", hojson_context->integer_value);
                             break;
                         case HOJSON_TYPE_FLOAT:
-                            printf("        value: %g",hojson_context->float_value);
+                            printf("         value: %g",hojson_context->float_value);
                             break;
                         case HOJSON_TYPE_STRING:
-                            printf("        value: \"%s\"", hojson_context->string_value);
+                            printf("         value: \"%s\"", hojson_context->string_value);
                             break;
                         case HOJSON_TYPE_BOOLEAN:
-                            printf("        value: %s", hojson_context->bool_value ? "true" : "false");
+                            printf("         value: %s", hojson_context->bool_value ? "true" : "false");
                             break;
                         case HOJSON_TYPE_NULL:
-                            printf("        value: null");
+                            printf("         value: null");
                             break;
                         }
                         if (hojson_context->name != NULL)
@@ -158,28 +159,28 @@ int main(int argc, char** argv) {
                             printf("\n");
                         break;
                     case HOJSON_OBJECT_BEGIN:
-                        printf(" object begin");
+                        printf("  object begin");
                         if (hojson_context->name != NULL)
                             printf(": \"%s\"\n", hojson_context->name);
                         else
                             printf("\n");
                         break;
                     case HOJSON_OBJECT_END:
-                        printf("   object end");
+                        printf("    object end");
                         if (hojson_context->name != NULL)
                             printf(": \"%s\"\n", hojson_context->name);
                         else
                             printf("\n");
                         break;
                     case HOJSON_ARRAY_BEGIN:
-                        printf("  array begin");
+                        printf("   array begin");
                         if (hojson_context->name != NULL)
                             printf(": \"%s\"\n", hojson_context->name);
                         else
                             printf("\n");
                         break;
                     case HOJSON_ARRAY_END:
-                        printf("    array end");
+                        printf("     array end");
                         if (hojson_context->name != NULL)
                             printf(": \"%s\"\n", hojson_context->name);
                         else
