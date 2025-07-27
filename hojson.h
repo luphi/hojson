@@ -1088,7 +1088,7 @@ hojson_character_t hojson_encode_character(unsigned codepoint, int encoding) {
     c.codepoint = codepoint;
     c.encoded = 0;
 
-    /* This variable will make it easier to assign values to 'c.endoded' without difficult-to-read casts */
+    /* This variable will make it easier to assign values to 'c.encoded' without difficult-to-read casts */
     char* str = (char*)&(c.encoded);
 
     switch (encoding) {
@@ -1098,7 +1098,7 @@ hojson_character_t hojson_encode_character(unsigned codepoint, int encoding) {
             c.encoded = codepoint;
             c.bytes = 1;
         } else if (codepoint >= 0x000080 && codepoint <= 0x000007FF) { /* If the codepoint will fit into two bytes */
-            /* For codepoints with bits XXXXXAAA AABBBBBB, we want to transform the bits to the 110AAAAA 10BBBBBB. */
+            /* For codepoints with bits XXXXXAAA AABBBBBB, we want to transform them to the form 110AAAAA 10BBBBBB. */
             /* The method here treats c.encoded as an array of unsigned, eight-bit integers. This is done to assign */
             /* bytes individually for the sake of endianness where UTF-8 is big endian. The codepoint is masked in */
             /* order to zero any bits that are not used in the byte being assigned, then shifted all the way to the */
