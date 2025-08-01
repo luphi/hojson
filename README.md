@@ -5,7 +5,7 @@ Header-Only JSON parser written in portable ANSI C.
 
 ## Features
 
-- Portable ANSI C (C89), tested with GCC (Windows and Linux) and MSVC
+- Portable ANSI C (C89), tested with GCC (Windows and Linux), Clang (macOS), and MSVC
 - Supports UTF-8, UTF-16BE, and UTF-16LE including their BOMs
 - Allows content to be passed in parts
 - Does not require malloc() and allows for reallocation of the buffer
