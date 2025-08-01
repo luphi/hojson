@@ -215,9 +215,9 @@ enum {
     HOJSON_ENCODING_UTF_16_BE /* Variable-lenght encoding (16 or 32 bits), big-endian variant */
 };
 
-typedef struct _hojson_node_t hojson_node_t;
+struct _hojson_node_t;
 typedef struct _hojson_node_t {
-    hojson_node_t* parent; /* Points to the parent node, or NULL if this is the root */
+    struct _hojson_node_t* parent; /* Points to the parent node, or NULL if this is the root */
     char* end; /* Points to the last byte of this node's data */
     int flags; /* May contain any number of bit flags indicating various things */
     char data; /* Where characters will be stored in the buffer, must be defined last */
